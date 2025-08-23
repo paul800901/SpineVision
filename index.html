@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>多模態影像觀察</title>
+  <link rel="icon" href="assets/logo.png">
+  <style>
+    :root{ --bg:#f5f6f8; --panel:#fff; --line:#e6e8ee; --text:#1a2530; --sub:#718096; --accent:#0f766e; --shadow:0 4px 12px rgba(0,0,0,.06); }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC","Microsoft JhengHei",Arial,sans-serif}
+    .wrap{max-width:1200px;margin:28px auto;padding:0 16px}
+    .grid{display:grid;grid-template-columns:1.1fr 1fr 0.9fr;gap:18px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+    .panel>.head{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700}
+    .panel>.body{padding:16px}
+    .sticky{position:sticky;top:16px;align-self:flex-start}
+    .dropzone{border:1px dashed var(--line);border-radius:10px;background:#0f0f12;display:flex;align-items:center;justify-content:center;min-height:360px;max-height:calc(100vh - 320px);overflow:auto;margin-top:6px;padding:10px}
+    .placeholder{color:#8fa0b3;text-align:center}
+    .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;width:100%}
+    .thumb{background:#0b0e13;border:1px solid #1f2937;border-radius:8px;overflow:hidden;position:relative}
+    .thumb img{width:100%;height:100%;object-fit:cover;display:block;aspect-ratio:1/1}
+    .thumb .idx{position:absolute;top:6px;left:6px;background:#0f766e;color:#fff;font-size:12px;line-height:1;padding:4px 6px;border-radius:6px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+    .row .grow{flex:1}
+    input[type="file"],input[type="text"],input[type="date"]{display:block;width:100%;height:36px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff}
+    textarea{width:100%;min-height:120px;border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical;background:#fffefa}
+    button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer}
+    button.secondary{background:#334155}
+    button[disabled]{opacity:.55;cursor:not-allowed}
+    select{height:36px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 8px}
+    .muted{color:#58677a;font-size:12px}
+    .report{white-space:pre-wrap;line-height:1.6;min-height:180px;border:1px dashed var(--line);border-radius:10px;padding:10px;background:#fcfcff}
+    .divider{height:1px;background:var(--line);margin:12px 0}
+    .brandlist{padding-left:18px;margin:8px 0 0 0;color:#4b5563}
+    .qr{width:100%;max-width:240px;display:block;margin:8px auto;border-radius:8px;border:1px solid var(--line);background:#fff}
+    .logo{width:100%;max-width:360px;display:block;margin:8px auto;border-radius:8px;border:1px solid var(--line);background:#fff}
+    .grid-2{display:grid;grid-template-columns:90px 1fr;gap:10px 12px;align-items:center}
+    @media (max-width:1080px){ .grid{grid-template-columns:1fr} .sticky{position:static} }
+    .input-group { display: flex; gap: 10px; }
+    .input-group > div { flex: 1; }
+    .pill{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);}
+    .ok{background:#e6f7f2;color:#0f766e;border-color:#b6e6d7}
+    .bad{background:#fdecec;color:#b42318;border-color:#f2c2c2}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;align-items:baseline;gap:10px;justify-content:space-between;margin:0 0 8px 2px;">
+    <h2 style="margin:0;font-size:18px">多模態影像觀察（AI × RAG 檢索增強生成 × 臨床觀察）</h2>
+    <div class="row" style="margin:0">
+      <span id="bStat" class="pill bad">後端：未設定</span>
+      <input id="backend" style="width:260px" placeholder="預設留空=同站" />
+      <button id="save">儲存</button>
+      <button id="clear" class="secondary">清除</button>
+      <button id="copy" class="secondary">複製</button>
+    </div>
+  </div>
+  <div class="grid">
+    <section class="panel">
+      <div class="head">原始影像</div>
+      <div class="body">
+        <div id="drop" class="dropzone">
+          <div class="placeholder">尚未選擇影像（可拖放多張）</div>
+        </div>
+        <div class="row">
+          <input id="file" class="grow" type="file" accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff" multiple />
+          <button id="runBtn">送出判讀</button>
+          <button id="pdfBtn" class="secondary" disabled>匯出 PDF</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <label class="muted">臨床觀察</label>
+          <textarea id="notes" placeholder="例：誘發姿勢、觸診所見、影像角度、測量數值、既往影像重點、臨床假設…"></textarea>
+        </div>
+        <div class="input-group">
+          <div>
+            <label>影像類型</label>
+            <select id="mod">
+              <option value=""></option>
+              <option value="超音波影像">超音波影像</option>
+              <option value="X光影像">X光影像</option>
+              <option value="核磁共振影像">核磁共振影像</option>
+            </select>
+          </div>
+          <div>
+            <label>部位</label>
+            <input id="reg" placeholder="例如：右肩關節" />
+          </div>
+        </div>
+        <div id="err" class="muted" style="color:#b42318;margin-top:6px;"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="head">多模態影像觀察（內建獨立檢索資料庫）</div>
+      <div class="body">
+        <div id="report" class="report">請上傳影像並送出判讀。</div>
+        <div class="divider"></div>
+        <details><summary class="muted">說明</summary>
+          <div class="muted">此區為內部使用，允許臨床診斷/處置詞；PDF 會自動轉為非診斷性措辭。</div>
+        </details>
+      </div>
+    </section>
+
+    <aside class="panel sticky">
+      <div class="head">客戶資料</div>
+      <div class="body">
+        <div class="grid-2">
+          <label>姓名</label><input id="clientName" placeholder="輸入姓名" />
+          <label>性別</label>
+          <select id="clientSex"><option value="">— 選擇 —</option><option>男</option><option>女</option><option>其他／不透露</option></select>
+          <label>日期</label><input id="visitDate" type="date" />
+        </div>
+      </div>
+      <div class="head">品牌／LINE</div>
+      <div class="body">
+        <img src="assets/line_qr.png" class="qr" alt="LINE QR" />
+        <ul class="brandlist">
+          <li>疼痛 × 功能導向</li><li>專業 × 精準檢查</li><li>簡潔 × 親切衛教</li><li>目標：幫助你回到好的日常</li>
+        </ul>
+        <div class="divider"></div>
+        <img src="assets/logo.png" class="logo" alt="見觀 LOGO" />
+      </div>
+    </aside>
+  </div>
+</div>
+<script>
+(function(){
+  const $=q=>document.querySelector(q);
+  const drop=$('#drop'), fileEl=$('#file'), report=$('#report'), errEl=$('#err');
+  const btn=$('#runBtn'), pdfBtn=$('#pdfBtn');
+  const modEl=$('#mod'), regEl=$('#reg');
+  const clientName=$('#clientName'), clientSex=$('#clientSex'), visitDate=$('#visitDate');
+  const backendEl=$('#backend'), bStat=$('#bStat');
+
+  // Helper: query param
+  function getParam(name){
+    const u=new URL(location.href); return u.searchParams.get(name)||'';
+  }
+
+  // Autoload order: ?b= → backend.txt → localStorage → (if https) same origin → fallback blank
+  async function autoInitBackend(){
+    const q = getParam('b') || getParam('backend');
+    if(q){ backendEl.value=q.trim(); localStorage.setItem('BACKEND', backendEl.value); }
+    else{
+      try{
+        const r = await fetch('backend.txt', {cache:'no-store'});
+        if(r.ok){ backendEl.value = (await r.text()).trim(); if(backendEl.value){ localStorage.setItem('BACKEND', backendEl.value);} }
+      }catch(e){/* ignore */}
+      if(!backendEl.value){ backendEl.value = localStorage.getItem('BACKEND') || ''; }
+    }
+    updateBStat();
+  }
+
+  function updateBStat(){
+    const v=(backendEl.value||'').trim();
+    if(v){
+      bStat.textContent='後端：已設定'; bStat.className='pill ok';
+    }else{
+      bStat.textContent='後端：未設定（留空=同站）'; bStat.className='pill bad';
+    }
+  }
+
+  $('#save').addEventListener('click', ()=>{ localStorage.setItem('BACKEND', backendEl.value.trim()); updateBStat(); });
+  $('#clear').addEventListener('click', ()=>{ backendEl.value=''; localStorage.removeItem('BACKEND'); updateBStat(); });
+  $('#copy').addEventListener('click', ()=>{ navigator.clipboard.writeText(backendEl.value||''); });
+
+  function api(path){ const b=(backendEl.value||'').trim(); return (b?b:'') + path; }
+  function headers(){ return {'Content-Type':'application/json'}; }
+
+  let dataURLs = [];
+  function reset(){
+    dataURLs = [];
+    drop.innerHTML = '<div class="placeholder">尚未選擇影像（可拖放多張）</div>';
+    pdfBtn.disabled=true; report.textContent='請上傳影像並送出判讀。'; errEl.textContent='';
+  }
+  function renderThumbs(){
+    drop.innerHTML='';
+    const wrap = document.createElement('div'); wrap.className='thumbs';
+    dataURLs.forEach((u,i)=>{
+      const t=document.createElement('div'); t.className='thumb';
+      const img=document.createElement('img'); img.src=u; t.appendChild(img);
+      const b=document.createElement('div'); b.className='idx'; b.textContent=String(i+1); t.appendChild(b);
+      wrap.appendChild(t);
+    });
+    drop.appendChild(wrap);
+  }
+
+  reset();
+  drop.addEventListener('dragover', e=>{e.preventDefault(); drop.style.outline='2px dashed #0f766e'});
+  drop.addEventListener('dragleave', e=>{drop.style.outline='none'});
+  drop.addEventListener('drop', e=>{
+    e.preventDefault(); drop.style.outline='none';
+    const files = Array.from(e.dataTransfer.files||[]).filter(f=>/\.(png|jpg|jpeg|bmp|tif|tiff)$/i.test(f.name));
+    if(!files.length) return;
+    const readers = files.map(f=> new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(f); }));
+    Promise.all(readers).then(arr=>{ dataURLs = arr; renderThumbs(); fileEl.files = e.dataTransfer.files; });
+  });
+  fileEl.addEventListener('click', ()=>fileEl.value='');
+  fileEl.addEventListener('change', ()=>{
+    const files = Array.from(fileEl.files||[]);
+    if(!files.length){ reset(); return; }
+    const readers = files.map(f=> new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(f); }));
+    Promise.all(readers).then(arr=>{ dataURLs = arr; renderThumbs(); });
+  });
+
+  async function analyzeOne(img){
+    const payload = {
+      images: [img],
+      image: img,
+      modality: (modEl.value || ''),
+      region: (regEl.value || ''),
+      notes: (document.querySelector('#notes')?.value||'').trim(),
+      clientName: clientName.value.trim(),
+      clientSex: clientSex.value.trim(),
+      visitDate: visitDate.value.trim()
+    };
+    const res = await fetch(api('/analyze'), {method:'POST', headers:headers(), body: JSON.stringify(payload)});
+    if(!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    return data.summary || '(無內容)';
+  }
+
+  async function analyze(){
+    errEl.textContent=''; report.textContent='分析中…';
+    if(!dataURLs.length){ report.textContent='請先選擇影像檔（可多張）。'; return; }
+    btn.disabled=true; pdfBtn.disabled=true;
+    try{
+      let lines = [];
+      for(let i=0;i<dataURLs.length;i++){
+        const txt = await analyzeOne(dataURLs[i]);
+        lines.push(`【第${i+1}張專業詳細判讀】\\n${txt}\\n`);
+      }
+      const out = lines.join('\\n\\n');
+      report.textContent = out;
+      pdfBtn.disabled=false;
+    }catch(e){
+      errEl.textContent = (''+e.message).includes('Failed to fetch') ? '連線失敗（後端未啟動或被擋）。' : e.message;
+      report.textContent='請稍後再試。';
+    }finally{ btn.disabled=false; }
+  }
+
+  async function exportPDF(){
+    try{
+      const res = await fetch(api('/export-pdf'), {
+        method:'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          summary: report.textContent || '',
+          meta: { name: clientName.value.trim(), sex: clientSex.value.trim(), date: visitDate.value.trim() },
+          images_b64: dataURLs,
+          image_b64: (dataURLs[0]||'')
+        })
+      });
+      if(!res.ok){ throw new Error(await res.text()); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url;
+      const safe=(clientName.value||'未命名').replace(/[\\/:*?"<>|]/g,'_');
+      a.download = `見觀_觀察摘要_${safe}.pdf`; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }catch(e){ errEl.textContent = e.message; }
+  }
+
+  document.getElementById('runBtn').addEventListener('click', analyze);
+  document.getElementById('pdfBtn').addEventListener('click', exportPDF);
+
+  autoInitBackend();
+})();
+</script>
+</body>
+</html>
