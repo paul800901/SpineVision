@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>多模態影像觀察</title>
-  <link rel="icon" href="assets/logo.png">
   <style>
     :root{ --bg:#f5f6f8; --panel:#fff; --line:#e6e8ee; --text:#1a2530; --sub:#718096; --accent:#0f766e; --shadow:0 4px 12px rgba(0,0,0,.06); }
     *{box-sizing:border-box}
@@ -39,21 +38,29 @@
     @media (max-width:1080px){ .grid{grid-template-columns:1fr} .sticky{position:static} }
     .input-group { display: flex; gap: 10px; }
     .input-group > div { flex: 1; }
-    .pill{font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);}
-    .ok{background:#e6f7f2;color:#0f766e;border-color:#b6e6d7}
-    .bad{background:#fdecec;color:#b42318;border-color:#f2c2c2}
   </style>
+
+<script>
+function normalizeNewlines(s){
+  if(!s) return "";
+  try{
+    return String(s)
+      .replace(/\r\n/g, "\n")
+      .replace(/\\r\\n/g, "\n")
+      .replace(/\\n/g, "\n");
+  }catch(e){ return s; }
+}
+</script>
+
 </head>
 <body>
 <div class="wrap">
   <div style="display:flex;align-items:baseline;gap:10px;justify-content:space-between;margin:0 0 8px 2px;">
     <h2 style="margin:0;font-size:18px">多模態影像觀察（AI × RAG 檢索增強生成 × 臨床觀察）</h2>
     <div class="row" style="margin:0">
-      <span id="bStat" class="pill bad">後端：未設定</span>
-      <input id="backend" style="width:260px" placeholder="預設留空=同站" />
+      <label class="muted">後端：</label>
+      <input id="backend" style="width:220px" placeholder="預設留空=同站" />
       <button id="save">儲存</button>
-      <button id="clear" class="secondary">清除</button>
-      <button id="copy" class="secondary">複製</button>
     </div>
   </div>
   <div class="grid">
@@ -97,7 +104,7 @@
         <div id="report" class="report">請上傳影像並送出判讀。</div>
         <div class="divider"></div>
         <details><summary class="muted">說明</summary>
-          <div class="muted">此區為內部使用，允許臨床診斷/處置詞；PDF 會自動轉為非診斷性措辭。</div>
+          <div class="muted">此區為內部使用，允許臨床診斷/治療用語；PDF 會轉為非診斷性措辭。</div>
         </details>
       </div>
     </section>
@@ -131,39 +138,10 @@
   const btn=$('#runBtn'), pdfBtn=$('#pdfBtn');
   const modEl=$('#mod'), regEl=$('#reg');
   const clientName=$('#clientName'), clientSex=$('#clientSex'), visitDate=$('#visitDate');
-  const backendEl=$('#backend'), bStat=$('#bStat');
+  const backendEl=$('#backend');
 
-  // Helper: query param
-  function getParam(name){
-    const u=new URL(location.href); return u.searchParams.get(name)||'';
-  }
-
-  // Autoload order: ?b= → backend.txt → localStorage → (if https) same origin → fallback blank
-  async function autoInitBackend(){
-    const q = getParam('b') || getParam('backend');
-    if(q){ backendEl.value=q.trim(); localStorage.setItem('BACKEND', backendEl.value); }
-    else{
-      try{
-        const r = await fetch('backend.txt', {cache:'no-store'});
-        if(r.ok){ backendEl.value = (await r.text()).trim(); if(backendEl.value){ localStorage.setItem('BACKEND', backendEl.value);} }
-      }catch(e){/* ignore */}
-      if(!backendEl.value){ backendEl.value = localStorage.getItem('BACKEND') || ''; }
-    }
-    updateBStat();
-  }
-
-  function updateBStat(){
-    const v=(backendEl.value||'').trim();
-    if(v){
-      bStat.textContent='後端：已設定'; bStat.className='pill ok';
-    }else{
-      bStat.textContent='後端：未設定（留空=同站）'; bStat.className='pill bad';
-    }
-  }
-
-  $('#save').addEventListener('click', ()=>{ localStorage.setItem('BACKEND', backendEl.value.trim()); updateBStat(); });
-  $('#clear').addEventListener('click', ()=>{ backendEl.value=''; localStorage.removeItem('BACKEND'); updateBStat(); });
-  $('#copy').addEventListener('click', ()=>{ navigator.clipboard.writeText(backendEl.value||''); });
+  backendEl.value = localStorage.getItem('BACKEND') || (location.protocol==='file:' ? 'http://127.0.0.1:5001' : '');
+  $('#save').addEventListener('click', ()=>{ localStorage.setItem('BACKEND', backendEl.value.trim()); });
 
   function api(path){ const b=(backendEl.value||'').trim(); return (b?b:'') + path; }
   function headers(){ return {'Content-Type':'application/json'}; }
@@ -210,7 +188,7 @@
       image: img,
       modality: (modEl.value || ''),
       region: (regEl.value || ''),
-      notes: (document.querySelector('#notes')?.value||'').trim(),
+      notes: ($('#notes')?.value||'').trim(),
       clientName: clientName.value.trim(),
       clientSex: clientSex.value.trim(),
       visitDate: visitDate.value.trim()
@@ -219,7 +197,8 @@
     if(!res.ok) throw new Error(await res.text());
     const data = await res.json();
     if(data.error) throw new Error(data.error);
-    return data.summary || '(無內容)';
+    const _s = (data.summary || "(無內容)");
+    return normalizeNewlines(_s);
   }
 
   async function analyze(){
@@ -230,10 +209,10 @@
       let lines = [];
       for(let i=0;i<dataURLs.length;i++){
         const txt = await analyzeOne(dataURLs[i]);
-        lines.push(`【第${i+1}張專業詳細判讀】\\n${txt}\\n`);
+        lines.push(`【第${i+1}張專業詳細判讀}\n${txt}\n`);
       }
-      const out = lines.join('\\n\\n');
-      report.textContent = out;
+      const out = normalizeNewlines(lines.join('\n\n'));
+      report.textContent = normalizeNewlines(out);
       pdfBtn.disabled=false;
     }catch(e){
       errEl.textContent = (''+e.message).includes('Failed to fetch') ? '連線失敗（後端未啟動或被擋）。' : e.message;
@@ -265,8 +244,6 @@
 
   document.getElementById('runBtn').addEventListener('click', analyze);
   document.getElementById('pdfBtn').addEventListener('click', exportPDF);
-
-  autoInitBackend();
 })();
 </script>
 </body>
