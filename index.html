@@ -39,19 +39,6 @@
     .input-group { display: flex; gap: 10px; }
     .input-group > div { flex: 1; }
   </style>
-
-<script>
-function normalizeNewlines(s){
-  if(!s) return "";
-  try{
-    return String(s)
-      .replace(/\r\n/g, "\n")
-      .replace(/\\r\\n/g, "\n")
-      .replace(/\\n/g, "\n");
-  }catch(e){ return s; }
-}
-</script>
-
 </head>
 <body>
 <div class="wrap">
@@ -104,7 +91,7 @@ function normalizeNewlines(s){
         <div id="report" class="report">請上傳影像並送出判讀。</div>
         <div class="divider"></div>
         <details><summary class="muted">說明</summary>
-          <div class="muted">此區為內部使用，允許臨床診斷/治療用語；PDF 會轉為非診斷性措辭。</div>
+          <div class="muted">此區為內部使用，允許臨床診斷/處置用語；PDF 會轉為非診斷性措辭。</div>
         </details>
       </div>
     </section>
@@ -197,8 +184,8 @@ function normalizeNewlines(s){
     if(!res.ok) throw new Error(await res.text());
     const data = await res.json();
     if(data.error) throw new Error(data.error);
-    const _s = (data.summary || "(無內容)");
-    return normalizeNewlines(_s);
+    const s = (data.summary || '(無內容)');
+    return s.replace(/\r\n/g,'\n').replace(/\\n/g,'\n');
   }
 
   async function analyze(){
@@ -209,10 +196,12 @@ function normalizeNewlines(s){
       let lines = [];
       for(let i=0;i<dataURLs.length;i++){
         const txt = await analyzeOne(dataURLs[i]);
-        lines.push(`【第${i+1}張專業詳細判讀}\n${txt}\n`);
+        lines.push(`【第${i+1}張專業詳細判讀】\n${txt}\n`);
       }
-      const out = normalizeNewlines(lines.join('\n\n'));
-      report.textContent = normalizeNewlines(out);
+      const out = lines.join('\n\n')
+        .replace(/\r\n/g, '\n')
+        .replace(/\\n/g, '\n');
+      report.textContent = out;
       pdfBtn.disabled=false;
     }catch(e){
       errEl.textContent = (''+e.message).includes('Failed to fetch') ? '連線失敗（後端未啟動或被擋）。' : e.message;
@@ -233,13 +222,18 @@ function normalizeNewlines(s){
         })
       });
       if(!res.ok){ throw new Error(await res.text()); }
+      const ct = (res.headers.get('content-type')||'').toLowerCase();
+      if(!ct.includes('application/pdf')){
+        const t = await res.text();
+        throw new Error(t.slice(0,500) || '後端未回傳 PDF');
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a=document.createElement('a'); a.href=url;
       const safe=(clientName.value||'未命名').replace(/[\\/:*?"<>|]/g,'_');
       a.download = `見觀_觀察摘要_${safe}.pdf`; document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-    }catch(e){ errEl.textContent = e.message; }
+    }catch(e){ errEl.textContent = (e && e.message) ? e.message : String(e); }
   }
 
   document.getElementById('runBtn').addEventListener('click', analyze);
